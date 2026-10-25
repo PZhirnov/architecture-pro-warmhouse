@@ -1,10 +1,12 @@
 import os
+from email.policy import default
 
 
 class Config:
     """Базовая конфигураця"""
     DEBUG = False
     TESTING = False
+    PORT = 8081
     # Диапазон генерации температур
     TEMP_MAX = 26.0
     TEMP_MIN = 18.0

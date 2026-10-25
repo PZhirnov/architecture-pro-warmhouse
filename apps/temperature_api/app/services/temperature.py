@@ -1,6 +1,7 @@
 """Бизнес-логика: разрешение location/sensorId и генерация температуры."""
 
 import random
+from datetime import datetime, timezone
 
 from flask import current_app
 
@@ -37,10 +38,14 @@ def get_temperature(location: str, sensor_id: str) -> dict:
     """Полный сценарий: разрешаем параметры и генерируем температуру."""
     location = resolve_location(location, sensor_id)
     sensor_id = resolve_sensor_id(location, sensor_id)
+    value = generate_temperature()
 
     return {
         "location": location,
-        "sensorId": sensor_id,
-        "temperature": generate_temperature(),
+        "sensor_id": sensor_id, # оставляем — Go его игнорирует
+        "value": value,
         "unit": "°C",
+        "status": "ok",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "description": f"Температура для сенсора {sensor_id}",
     }

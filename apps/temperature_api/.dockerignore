@@ -1,0 +1,15 @@
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.git/
+.gitignore
+.idea/
+*.iml
+.DS_Store
+tests/
+Dockerfile
+docker-compose.yml
+.dockerignore
+README.md
