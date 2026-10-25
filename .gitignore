@@ -1,5 +1,9 @@
 .DS_Store
 
+# Настройки PyCharm
+.idea/
+*.iml
+
 # ===== Python =====
 # Байт-код и кэш
 __pycache__/
