@@ -1,1 +1,82 @@
 .DS_Store
+
+# ===== Python =====
+# Байт-код и кэш
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Сборка и дистрибутивы
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+MANIFEST
+
+# Виртуальные окружения
+.venv/
+venv/
+env/
+ENV/
+.env/
+.python-version
+
+# Тестирование и покрытие
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+*.cover
+.hypothesis/
+
+# Jupyter (если используете)
+.ipynb_checkpoints/
+
+# Типизация и линтеры
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+
+# ===== Секреты и окружение =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ===== IDE / редакторы =====
+# VS Code
+.vscode/
+# PyCharm / IntelliJ
+.idea/
+*.iml
+# Vim / Emacs
+*.swp
+*.swo
+*~
+
+# ===== ОС =====
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ===== Логи и временные файлы =====
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
