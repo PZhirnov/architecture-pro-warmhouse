@@ -1,0 +1,44 @@
+@startuml C4_Simplified_RU
+!include <C4/C4_Container>
+
+title Контейнерная диаграмма Умного дома (MVP)
+
+Person(user, "Пользователь")
+Person(admin, "Администратор")
+Person(operator, "Оператор")
+System_Ext(simulator, "Эмулятор IoT-устройств", "Имитация датчиков по MQTT")
+System_Ext(pushStub, "Заглушка уведомлений", "Вывод в лог / консоль")
+
+System_Boundary(platform, "Платформа умного дома (MVP)") {
+  Container(gw, "BFF API", "Python/ DRF", "JWT-аутентификация, маршрутизация запросов")
+  Container(automation, "Автоматизация", "DRF", "Движок правил и сценариев (ядро)")
+  Container(device, "Управление устройствами", "Python / DRF", "Жизненный цикл устройств, команды, состояние")
+  Container(telemetry, "Телеметрия", "Fast API", "Приём, хранение и отдача показаний")
+  Container(acl, "Интеграция устройств (ACL)", "Go", "Адаптер протоколов: MQTT → доменные события")
+  ContainerDb(db, "PostgreSQL", "SQL", "Все доменные данные + телеметрия")
+  ContainerQueue(broker, "Шина событий", "NATS", "Доменные события и команды")
+  Container(oldSmartHomeGo, "Старый монолит Теплый дом", "Go", "Состояния датчиков, простая регистрация и привязка датчиков")
+}
+
+Rel(user, gw, "HTTPS / REST", "Запросы из приложения")
+Rel(admin, gw, "HTTPS / REST", "Запросы из приложения")
+Rel(operator, gw, "HTTPS / REST", "Запросы из приложения")
+Rel(gw, automation, "REST", "Управление правилами")
+Rel(gw, device, "REST", "Управление устройствами")
+Rel(gw, telemetry, "REST", "Запрос истории показаний")
+Rel(gw, oldSmartHomeGo, "REST", "Запрос данных существующей системы")
+Rel(simulator, acl, "MQTT", "Сырые сообщения датчиков")
+Rel(acl, device, "Событие «Показание нормализовано»", "ACL: нормализация протокола")
+Rel(device, broker, "События «Показание получено», «Команда выполнена»", "Публикация")
+Rel(telemetry, broker, "Событие «Показание получено»", "Публикация")
+Rel(automation, broker, "События «Запрошено действие», «Правило сработало»", "Публикация")
+Rel(broker, automation, "Событие «Показание получено»", "Подписка")
+Rel(broker, device, "Событие «Запрошено действие»", "Подписка")
+Rel(device, db, "SQL", "Чтение/запись устройств")
+Rel(telemetry, db, "SQL", "Запись показаний")
+Rel(automation, db, "SQL", "Чтение/запись правил")
+Rel(oldSmartHomeGo, db, "SQL", "Чтение/запись данных устройств")
+Rel(acl, oldSmartHomeGo, "HTTP", "Запрос показаний через API Монолита")
+Rel(automation, pushStub, "Уведомление (лог)", "Заглушка")
+
+@enduml
