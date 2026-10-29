@@ -1,0 +1,53 @@
+@startuml Component_ApiGateway_BFF_Python
+!include <C4/C4_Component>
+
+title Компоненты: API-шлюз (BFF) на Python
+
+Person(resident, "Житель", "Мобильное / веб-приложение")
+Person(admin, "Администратор", "Партнёры, владелец платформы")
+Person(operator, "Оператор", "Поддержка, мониторинг")
+
+Container_Boundary(gw, "API-шлюз (BFF) — Python / FastAPI") {
+  Component(auth, "Аутентификация", "Python / FastAPI middleware", "Проверка JWT, извлечение userId, homeId, роли (resident/admin/operator)")
+  Component(rbac, "Проверка ролей (RBAC)", "Python", "Разграничение доступа: житель / администратор / оператор")
+  Component(router, "Маршрутизатор", "Python / FastAPI", "Маршрутизация запросов к сервисам")
+  Component(aggregator, "Агрегатор ответов", "Python / httpx (async)", "Параллельные вызовы сервисов, сборка ответа")
+  Component(adapter, "Адаптер клиента", "Python / Pydantic", "Формирование DTO под мобильное/веб-приложение")
+  Component(wsHub, "WebSocket-хаб", "Python / websockets", "Real-time push клиентам (события, показания)")
+  Component(rateLimiter, "Ограничитель запросов", "Python / redis", "Rate limit по пользователю, роли и IP")
+  Component(errorMapper, "Маппер ошибок", "Python", "Приведение ошибок сервисов к единому формату")
+  Component(audit, "Аудит действий", "Python", "Логирование действий администратора и оператора")
+}
+
+Container(automation, "Автоматизация", "Go", "Правила и сценарии")
+Container(device, "Управление устройствами", "Go", "Устройства и команды")
+Container(telemetry, "Телеметрия", "Go", "Показания и история")
+ContainerQueue(broker, "Шина событий", "NATS", "Доменные события")
+ContainerDb(cache, "Redis", "KV / Cache", "Сессии, rate limit, кэш прав")
+System_Ext(idp, "Провайдер идентификации", "Keycloak / Auth0", "OIDC, выдача токенов с ролями")
+
+Rel(resident, auth, "HTTPS / REST / WebSocket", "JWT жителя")
+Rel(admin, auth, "HTTPS / REST", "JWT администратора")
+Rel(operator, auth, "HTTPS / REST", "JWT оператора")
+Rel(auth, idp, "Проверка токена", "OIDC")
+Rel(auth, rbac, "Роль из токена")
+Rel(rbac, router, "Разрешённый запрос")
+Rel(router, rateLimiter, "Проверка лимита")
+Rel(rateLimiter, cache, "Счётчики", "Redis")
+Rel(router, aggregator, "Запрос на агрегацию")
+Rel(aggregator, automation, "REST", "Правила (житель: чтение/запись; оператор: чтение; админ: всё)")
+Rel(aggregator, device, "REST", "Устройства (житель: свои; оператор: все; админ: всё)")
+Rel(aggregator, telemetry, "REST", "Показания (житель: свои; оператор: все; админ: всё)")
+Rel(aggregator, adapter, "Сырые ответы")
+Rel(adapter, resident, "DTO жителя", "JSON")
+Rel(adapter, admin, "DTO администратора", "JSON")
+Rel(adapter, operator, "DTO оператора", "JSON")
+Rel(adapter, errorMapper, "Ошибки")
+Rel(wsHub, broker, "Подписка на события", "NATS")
+Rel(wsHub, resident, "Push-события", "WebSocket")
+Rel(wsHub, operator, "Push-алерты", "WebSocket")
+Rel(errorMapper, resident, "Единый формат ошибок", "JSON")
+Rel(router, audit, "Действия admin/operator")
+Rel(audit, broker, "События аудита", "NATS")
+
+@enduml

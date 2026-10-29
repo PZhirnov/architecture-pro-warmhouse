@@ -1,0 +1,53 @@
+@startuml DeviceMgmt_Simple
+skinparam classAttributeIconSize 0
+title Управление устройствами — верхнеуровневое описание \nагрегата "Устройство"
+
+class Device {
+  +id: UUID
+  +homeId: UUID
+  +type: string
+  +state: string
+  +online: bool
+  +register()
+  +updateState(newState)
+  +markOffline()
+}
+
+class PairingSession {
+  +id: UUID
+  +homeId: UUID
+  +status: string
+  +start()
+  +complete(deviceId)
+}
+
+class DeviceService {
+  +registerDevice(homeId, type): Device
+  +sendCommand(deviceId, command)
+}
+
+interface DeviceRepository {
+  +findById(id): Device
+  +findByHome(homeId): List<Device>
+  +save(device)
+}
+
+class DeviceRepositoryPostgres {
+  +findById(id): Device
+  +findByHome(homeId): List<Device>
+  +save(device)
+}
+
+class DeviceHandler {
+  +handleRegister(cmd)
+  +handleSendCommand(cmd)
+  +handleActionRequested(event)
+}
+
+DeviceService --> DeviceRepository
+DeviceHandler --> DeviceService
+DeviceRepositoryPostgres ..|> DeviceRepository
+DeviceHandler ..> PairingSession : использует
+DeviceService ..> Device : создаёт/меняет
+
+@enduml

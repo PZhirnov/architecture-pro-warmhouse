@@ -1,0 +1,37 @@
+@startuml Component_Telemetry
+!include <C4/C4_Component>
+
+title Компоненты: Телеметрия
+
+Container_Boundary(telemetry, "Сервис «Телеметрия»") {
+  Component(ingest, "Приём показаний", "Python / NATS", "Подписка на «Показание нормализовано»")
+  Component(validator, "Валидатор", "Python", "Проверка схемы, единиц, диапазонов")
+  Component(dedup, "Дедупликатор", "Python", "Отбрасывание дубликатов по ключу")
+  Component(enricher, "Обогатитель", "Python", "Добавляет метаданные устройства (кэш + ACL)")
+  Component(writer, "Писатель", "Python", "Запись сырых показаний в PostgreSQL")
+  Component(aggregator, "Агрегатор", "Python", "Rollups: 1 мин, 1 час, 1 день")
+  Component(queryApi, "API запросов", "Python / HTTP", "История и агрегаты по запросу")
+  Component(publisher, "Публикатор событий", "Python / NATS", "Публикует «Показание получено», «Порог превышен», «Аномалия»")
+}
+
+ContainerDb(db, "PostgreSQL", "SQL", "Сырые показания (партиционировано) + агрегаты")
+ContainerQueue(broker, "Шина событий", "NATS", "Доменные события")
+Container(device, "Управление устройствами", "Python", "Метаданные устройств (ACL)")
+Container(automation, "Автоматизация", "Python", "Потребитель «Показание получено»")
+
+Rel(ingest, broker, "Подписка на «Показание нормализовано»", "NATS")
+Rel(ingest, validator, "Передаёт показание")
+Rel(validator, dedup, "Валидное показание")
+Rel(dedup, enricher, "Уникальное показание")
+Rel(enricher, device, "Запрос метаданных (кэш)", "gRPC / ACL")
+Rel(enricher, writer, "Обогащённое показание")
+Rel(writer, db, "INSERT", "SQL")
+Rel(writer, publisher, "Событие «Показание получено»")
+Rel(publisher, broker, "Публикация", "NATS")
+Rel(publisher, automation, "«Показание получено» (Published Language)", "NATS")
+Rel(aggregator, db, "Чтение сырых, запись агрегатов", "SQL")
+Rel(queryApi, db, "Чтение истории/агрегатов", "SQL")
+Rel(queryApi, db, "Проверка прав через API-шлюз", "внешний вызов")
+
+@enduml
+

@@ -6,10 +6,12 @@ title Контейнерная диаграмма Умного дома (MVP)
 Person(user, "Пользователь")
 Person(admin, "Администратор")
 Person(operator, "Оператор")
+Person(usersOldSystem, "Пользователи с прямым/nдоступом к старой системе")
 System_Ext(simulator, "Эмулятор IoT-устройств", "Имитация датчиков по MQTT")
 System_Ext(pushStub, "Заглушка уведомлений", "Вывод в лог / консоль")
+System_Ext(sensorsOldSystem, "Датчики старой системы", "Ответы на \nзапросы по HTTP")
 
-System_Boundary(platform, "Платформа умного дома (MVP)") {
+System_Boundary(platform, "Платформа умного дома (MVP) с включенным монолитом") {
   Container(gw, "BFF API", "Python/ DRF", "JWT-аутентификация, маршрутизация запросов")
   Container(automation, "Автоматизация", "DRF", "Движок правил и сценариев (ядро)")
   Container(device, "Управление устройствами", "Python / DRF", "Жизненный цикл устройств, команды, состояние")
@@ -19,6 +21,9 @@ System_Boundary(platform, "Платформа умного дома (MVP)") {
   ContainerQueue(broker, "Шина событий", "NATS", "Доменные события и команды")
   Container(oldSmartHomeGo, "Старый монолит Теплый дом", "Go", "Состояния датчиков, простая регистрация и привязка датчиков")
 }
+
+Rel(usersOldSystem, oldSmartHomeGo, "HTTPS / REST", "Запросы из приложения")
+
 
 Rel(user, gw, "HTTPS / REST", "Запросы из приложения")
 Rel(admin, gw, "HTTPS / REST", "Запросы из приложения")
@@ -38,6 +43,7 @@ Rel(device, db, "SQL", "Чтение/запись устройств")
 Rel(telemetry, db, "SQL", "Запись показаний")
 Rel(automation, db, "SQL", "Чтение/запись правил")
 Rel(oldSmartHomeGo, db, "SQL", "Чтение/запись данных устройств")
+Rel(oldSmartHomeGo, sensorsOldSystem, "HTTP", "Запросы данных / управление")
 Rel(acl, oldSmartHomeGo, "HTTP", "Запрос показаний через API Монолита")
 Rel(automation, pushStub, "Уведомление (лог)", "Заглушка")
 
