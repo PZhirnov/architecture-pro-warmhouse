@@ -1,0 +1,116 @@
+@startuml ER_SmartHome
+hide circle
+skinparam linetype ortho
+title ER-диаграмма: платформа умного дома (MVP)
+
+entity "users" {
+  * id : UUID <<PK>>
+  --
+  email : VARCHAR
+  password_hash : VARCHAR
+  role : VARCHAR  // resident | operator | admin
+  created_at : TIMESTAMP
+}
+
+entity "homes" {
+  * id : UUID <<PK>>
+  --
+  owner_id : UUID <<FK users.id>>
+  name : VARCHAR
+  address : VARCHAR
+  created_at : TIMESTAMP
+}
+
+entity "rooms" {
+  * id : UUID <<PK>>
+  --
+  home_id : UUID <<FK homes.id>>
+  name : VARCHAR
+}
+
+entity "devices" {
+  * id : UUID <<PK>>
+  --
+  home_id : UUID <<FK homes.id>>
+  room_id : UUID <<FK rooms.id>>
+  type : VARCHAR       // sensor | actuator | camera
+  vendor : VARCHAR
+  model : VARCHAR
+  firmware_version : VARCHAR
+  online : BOOLEAN
+  last_seen_at : TIMESTAMP
+  created_at : TIMESTAMP
+}
+
+entity "device_states" {
+  * id : UUID <<PK>>
+  --
+  device_id : UUID <<FK devices.id>>
+  property : VARCHAR    // temperature | motion | power | lock
+  value : VARCHAR
+  updated_at : TIMESTAMP
+}
+
+entity "pairing_sessions" {
+  * id : UUID <<PK>>
+  --
+  home_id : UUID <<FK homes.id>>
+  protocol : VARCHAR
+  status : VARCHAR      // started | found | completed | cancelled
+  created_at : TIMESTAMP
+  expires_at : TIMESTAMP
+}
+
+entity "automation_rules" {
+  * id : UUID <<PK>>
+  --
+  home_id : UUID <<FK homes.id>>
+  name : VARCHAR
+  enabled : BOOLEAN
+  schedule : VARCHAR    // cron или NULL
+  created_at : TIMESTAMP
+}
+
+entity "rule_actions" {
+  * id : UUID <<PK>>
+  --
+  rule_id : UUID <<FK automation_rules.id>>
+  device_id : UUID <<FK devices.id>>
+  command : VARCHAR     // turn_on | set_temperature | lock
+  payload : JSONB
+}
+
+entity "telemetry_readings" {
+  * id : BIGSERIAL <<PK>>
+  --
+  device_id : UUID <<FK devices.id>>
+  metric : VARCHAR
+  value : DOUBLE PRECISION
+  unit : VARCHAR
+  recorded_at : TIMESTAMP
+}
+
+entity "command_log" {
+  * id : UUID <<PK>>
+  --
+  device_id : UUID <<FK devices.id>>
+  command : VARCHAR
+  status : VARCHAR      // executed | failed
+  reason : VARCHAR
+  created_at : TIMESTAMP
+}
+
+' ===== Связи =====
+users ||--o{ homes : "владеет"
+homes ||--o{ rooms : "содержит"
+homes ||--o{ devices : "содержит"
+rooms ||--o{ devices : "размещает"
+devices ||--o{ device_states : "имеет состояние"
+devices ||--o{ telemetry_readings : "публикует"
+devices ||--o{ command_log : "исполняет"
+homes ||--o{ pairing_sessions : "проводит"
+homes ||--o{ automation_rules : "имеет правила"
+automation_rules ||--o{ rule_actions : "содержит действия"
+devices ||--o{ rule_actions : "цель действия"
+
+@enduml
