@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Device
-from app.schemas import DeviceCreate
+from app.schemas import DeviceCreate, DeviceUpdate
 
 
 async def get_device(db: AsyncSession, device_id: int) -> Device | None:
@@ -27,6 +27,23 @@ async def list_devices_by_house(
 async def create_device(db: AsyncSession, data: DeviceCreate) -> Device:
     device = Device(**data.model_dump())
     db.add(device)
+    await db.commit()
+    await db.refresh(device)
+    return device
+
+
+async def update_device(
+    db: AsyncSession, device: Device, data: DeviceUpdate
+) -> Device:
+    """
+    Частичное обновление. Применяет только переданные поля
+    (exclude_unset=True): если клиент не передал room_id — останется как было;
+    если передал "room_id": null — отвяжет от комнаты.
+    """
+    payload = data.model_dump(exclude_unset=True)
+    for field, value in payload.items():
+        setattr(device, field, value)
+
     await db.commit()
     await db.refresh(device)
     return device

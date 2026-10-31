@@ -96,6 +96,16 @@ class DeviceRead(DeviceBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DeviceUpdate(BaseModel):
+    """Частичное обновление — все поля опциональны."""
+    room_id: Optional[int] = None
+    type: Optional[str] = Field(None, pattern="^(sensor|actuator|camera|gateway)$")
+    vendor: Optional[str] = Field(None, max_length=100)
+    model: Optional[str] = Field(None, max_length=100)
+    firmware_version: Optional[str] = Field(None, max_length=50)
+    online: Optional[bool] = None
+
+
 # ---------- DeviceState ----------
 class DeviceStateBase(BaseModel):
     device_id: int

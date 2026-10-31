@@ -12,6 +12,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./smart_home/init.sql:/docker-entrypoint-initdb.d/init-01.sql   # создает схему БД из DLL
+      - ./init_db/init_ddl_new_db.sql:/docker-entrypoint-initdb.d/init-ddl_01.sql # добавляем в схему БД таблицы для новых сервисов
+      - ./init_db/init_dml_new_db.sql:/docker-entrypoint-initdb.d/init-dml_01.sql # добавляем в схему БД таблицы для новых сервисов
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d smarthome"]
       interval: 5s
@@ -35,6 +37,7 @@ services:
     networks:
     - smarthome-network
 
+# Монолит на Go (текущий рабочий сервис), отдающий случайную температуру для комнаты.
   app:
     build:
       context: ./smart_home
@@ -50,6 +53,25 @@ services:
       - TEMPERATURE_API_URL=http://temperature-api:8081
     ports:
       - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - smarthome-network
+# Новые сервисы:
+# Управление устройствами - sh-device-management-service
+  sh-device-management-service:
+    build:
+      context: ./sh_device-management-service
+      dockerfile: Dockerfile
+    container_name: device-management-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/smarthome
+      - APP_NAME=Smart Home API
+      - DEBUG=false
+    ports:
+      - "8082:8000"
     restart: unless-stopped
     networks:
       - smarthome-network
