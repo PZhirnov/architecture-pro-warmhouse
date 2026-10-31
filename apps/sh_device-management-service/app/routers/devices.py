@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import device as crud_device
 from app.crud import house as crud_house
+from app.crud import room as crud_room
 from app.deps import get_db
 from app.schemas import DeviceCreate, DeviceRead, DeviceUpdate
 
