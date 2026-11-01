@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     battery_threshold: float = 20.0
     rule_cooldown_sec: float = 60.0
 
-    device_url: str = "http://device:8081"
+    device_url: str = "http://device:8087"
     telemetry_url: str = "http://telemetry:8082"
     automation_url: str = "http://automation:8083"
     location_url: str = "http://location:8085"

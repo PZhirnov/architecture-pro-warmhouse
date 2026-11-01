@@ -42,15 +42,50 @@ services:
     networks:
       - smarthome-net
 
-  # ================== Сервисы ==================
+  # Решение задачи №5
+  temperature-api:
+    build:
+      context: ./temperature_api
+      dockerfile: Dockerfile
+    container_name: temperature-api
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    networks:
+      - smarthome-net
+  # ================== Старый монолит на Go ======
+  old-app-go:
+    build:
+      context: ./go_mono_smart_home
+      dockerfile: Dockerfile
+    container_name: old-smarthome-go-app
+    depends_on:
+      db:
+        condition: service_healthy
+      temperature-api:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/smarthome
+      - TEMPERATURE_API_URL=http://temperature-api:8081
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - smarthome-net
+
+  # Новые сервисы с BFF
+  # ================== Новые сервисы ==================
   bff:
     build: { context: ., dockerfile: Dockerfile.python }
     container_name: smarthome-bff
-    command: uvicorn services.bff.main:app --host 0.0.0.0 --port 8080
+    command: uvicorn services.bff.main:app --host 0.0.0.0 --port 8089
     ports:
-      - "8080:8080"
+      - "8089:8089"
     environment:
-      DEVICE_URL: http://device:8081
+      DEVICE_URL: http://device:8087
       TELEMETRY_URL: http://telemetry:8082
       AUTOMATION_URL: http://automation:8083
       LOCATION_URL: http://location:8085
@@ -92,9 +127,9 @@ services:
   device:
     build: { context: ., dockerfile: Dockerfile.python }
     container_name: smarthome-device
-    command: uvicorn services.device.main:app --host 0.0.0.0 --port 8081
+    command: uvicorn services.device.main:app --host 0.0.0.0 --port 8087
     ports:
-      - "8081:8081"
+      - "8087:8087"
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/smarthome
       NATS_URL: nats://nats:4222

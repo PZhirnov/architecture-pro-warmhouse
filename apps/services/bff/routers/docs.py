@@ -6,10 +6,10 @@ from common.config import settings
 router = APIRouter(tags=["meta"], include_in_schema=False)
 
 DOCS_SERVICES = {
-    "BFF":        "http://localhost:8080/docs",
+    "BFF":        "http://localhost:8089/docs",
     "User":   "http://localhost:8086/docs",
     "Location":   "http://localhost:8085/docs",
-    "Device":     "http://localhost:8081/docs",
+    "Device":     "http://localhost:8087/docs",
     "Telemetry":  "http://localhost:8082/docs",
     "Automation": "http://localhost:8083/docs",
     "ACL":        "http://localhost:8084/docs",
@@ -48,7 +48,7 @@ async def docs_index():
 @router.get("/api/openapi/{service}")
 async def proxy_openapi(service: str):
     urls = {
-        "bff":        "http://localhost:8080/openapi.json",
+        "bff":        "http://localhost:8089/openapi.json",
         "user": f"{settings.user_url}/openapi.json",
         "device":     f"{settings.device_url}/openapi.json",
         "telemetry":  f"{settings.telemetry_url}/openapi.json",
