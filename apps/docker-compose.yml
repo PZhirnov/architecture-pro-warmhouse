@@ -12,8 +12,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./go_mono_smart_home/init.sql:/docker-entrypoint-initdb.d/01-base.sql:ro
-      - ./init_db/init_ddl_new_db.sql:/docker-entrypoint-initdb.d/02-ddl.sql:ro
-      - ./init_db/init_dml_new_db.sql:/docker-entrypoint-initdb.d/03-dml.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d smarthome"]
       interval: 5s
@@ -41,7 +39,7 @@ services:
     build:
       context: ./go_mono_smart_home
       dockerfile: Dockerfile
-    container_name: smarthome-app
+    container_name: old-smarthome-go-app
     depends_on:
       postgres:
         condition: service_healthy
