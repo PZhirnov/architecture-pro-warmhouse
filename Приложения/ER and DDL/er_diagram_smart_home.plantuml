@@ -1,116 +1,245 @@
-@startuml ER_SmartHome
+@startuml ER_SmartHome_Full
+' ============================================================
+' ER-диаграмма: платформа умного дома (MVP)
+' Сгенерирована по SQL-скрипту schema.sql
+' ============================================================
+
 hide circle
 skinparam linetype ortho
+skinparam entity {
+  BackgroundColor #FEFECE
+  BorderColor #A80036
+  HeaderBackgroundColor #E8E8E8
+}
+skinparam arrow {
+  Color #A80036
+  FontColor #A80036
+}
+
 title ER-диаграмма: платформа умного дома (MVP)
 
-entity "users" {
-  * id : UUID <<PK>>
+' ============================================================
+' 1. users — пользователи
+' ============================================================
+entity "users" as users {
+  * id            : UUID           <<PK>>
   --
-  email : VARCHAR
-  password_hash : VARCHAR
-  role : VARCHAR  // resident | operator | admin
-  created_at : TIMESTAMP
+  * email         : VARCHAR(255)   <<UNIQUE>>
+  * password_hash : VARCHAR(255)
+  * role          : VARCHAR(20)    <<CHECK: resident|operator|admin>>
+  * created_at    : TIMESTAMP
 }
 
-entity "homes" {
-  * id : UUID <<PK>>
+' ============================================================
+' 2. homes — дома (SaaS-тенанты)
+' ============================================================
+entity "homes" as homes {
+  * id         : UUID           <<PK>>
   --
-  owner_id : UUID <<FK users.id>>
-  name : VARCHAR
-  address : VARCHAR
-  created_at : TIMESTAMP
+  * owner_id   : UUID           <<FK users.id>>
+  * name       : VARCHAR(255)
+    address    : VARCHAR(500)
+  * created_at : TIMESTAMP
 }
 
-entity "rooms" {
-  * id : UUID <<PK>>
+' ============================================================
+' 3. rooms — комнаты/зоны
+' ============================================================
+entity "rooms" as rooms {
+  * id      : UUID           <<PK>>
   --
-  home_id : UUID <<FK homes.id>>
-  name : VARCHAR
+  * home_id : UUID           <<FK homes.id>>
+  * name    : VARCHAR(255)
 }
 
-entity "devices" {
-  * id : UUID <<PK>>
+' ============================================================
+' 4. devices — устройства
+' ============================================================
+entity "devices" as devices {
+  * id               : UUID           <<PK>>
   --
-  home_id : UUID <<FK homes.id>>
-  room_id : UUID <<FK rooms.id>>
-  type : VARCHAR       // sensor | actuator | camera
-  vendor : VARCHAR
-  model : VARCHAR
-  firmware_version : VARCHAR
-  online : BOOLEAN
-  last_seen_at : TIMESTAMP
-  created_at : TIMESTAMP
+  * home_id          : UUID           <<FK homes.id>>
+    room_id          : UUID           <<FK rooms.id, NULLABLE>>
+  * type             : VARCHAR(50)    <<CHECK: sensor|actuator|camera|gateway>>
+    vendor           : VARCHAR(100)
+    model            : VARCHAR(100)
+    firmware_version : VARCHAR(50)
+  * online           : BOOLEAN
+    last_seen_at     : TIMESTAMP
+  * created_at       : TIMESTAMP
 }
 
-entity "device_states" {
-  * id : UUID <<PK>>
+' ============================================================
+' 5. device_states — текущее состояние (key-value)
+' ============================================================
+entity "device_states" as device_states {
+  * id         : UUID           <<PK>>
   --
-  device_id : UUID <<FK devices.id>>
-  property : VARCHAR    // temperature | motion | power | lock
-  value : VARCHAR
-  updated_at : TIMESTAMP
+  * device_id  : UUID           <<FK devices.id>>
+  * property   : VARCHAR(100)   <<UNIQUE with device_id>>
+  * value      : VARCHAR(255)
+  * updated_at : TIMESTAMP
 }
 
-entity "pairing_sessions" {
-  * id : UUID <<PK>>
+' ============================================================
+' 6. pairing_sessions — сессии сопряжения
+' ============================================================
+entity "pairing_sessions" as pairing_sessions {
+  * id         : UUID           <<PK>>
   --
-  home_id : UUID <<FK homes.id>>
-  protocol : VARCHAR
-  status : VARCHAR      // started | found | completed | cancelled
-  created_at : TIMESTAMP
-  expires_at : TIMESTAMP
+  * home_id    : UUID           <<FK homes.id>>
+  * protocol   : VARCHAR(50)
+  * status     : VARCHAR(20)    <<CHECK: started|found|completed|cancelled|expired>>
+  * created_at : TIMESTAMP
+  * expires_at : TIMESTAMP
 }
 
-entity "automation_rules" {
-  * id : UUID <<PK>>
+' ============================================================
+' 7. automation_rules — правила автоматизации
+' ============================================================
+entity "automation_rules" as automation_rules {
+  * id         : UUID           <<PK>>
   --
-  home_id : UUID <<FK homes.id>>
-  name : VARCHAR
-  enabled : BOOLEAN
-  schedule : VARCHAR    // cron или NULL
-  created_at : TIMESTAMP
+  * home_id    : UUID           <<FK homes.id>>
+  * name       : VARCHAR(255)
+  * enabled    : BOOLEAN
+    schedule   : VARCHAR(100)
+  * created_at : TIMESTAMP
 }
 
-entity "rule_actions" {
-  * id : UUID <<PK>>
+' ============================================================
+' 8. rule_actions — действия правила
+' ============================================================
+entity "rule_actions" as rule_actions {
+  * id        : UUID           <<PK>>
   --
-  rule_id : UUID <<FK automation_rules.id>>
-  device_id : UUID <<FK devices.id>>
-  command : VARCHAR     // turn_on | set_temperature | lock
-  payload : JSONB
+  * rule_id   : UUID           <<FK automation_rules.id>>
+  * device_id : UUID           <<FK devices.id>>
+  * command   : VARCHAR(50)
+  * payload   : JSONB
 }
 
-entity "telemetry_readings" {
-  * id : BIGSERIAL <<PK>>
+' ============================================================
+' 9. telemetry_readings — сырые показания (append-only)
+' ============================================================
+entity "telemetry_readings" as telemetry_readings {
+  * id          : BIGSERIAL      <<PK>>
   --
-  device_id : UUID <<FK devices.id>>
-  metric : VARCHAR
-  value : DOUBLE PRECISION
-  unit : VARCHAR
-  recorded_at : TIMESTAMP
+  * device_id   : UUID           <<FK devices.id>>
+  * metric      : VARCHAR(100)
+  * value       : DOUBLE PRECISION
+    unit        : VARCHAR(20)
+  * recorded_at : TIMESTAMP
 }
 
-entity "command_log" {
-  * id : UUID <<PK>>
+' ============================================================
+' 10. command_log — журнал команд
+' ============================================================
+entity "command_log" as command_log {
+  * id         : UUID           <<PK>>
   --
-  device_id : UUID <<FK devices.id>>
-  command : VARCHAR
-  status : VARCHAR      // executed | failed
-  reason : VARCHAR
-  created_at : TIMESTAMP
+  * device_id  : UUID           <<FK devices.id>>
+  * command    : VARCHAR(50)
+  * status     : VARCHAR(20)    <<CHECK: executed|failed|timeout>>
+    reason     : VARCHAR(255)
+  * created_at : TIMESTAMP
 }
 
-' ===== Связи =====
+' ============================================================
+' Связи (relationships)
+' ============================================================
+
+' users 1:N homes
 users ||--o{ homes : "владеет"
+
+' homes 1:N rooms
 homes ||--o{ rooms : "содержит"
+
+' homes 1:N devices
 homes ||--o{ devices : "содержит"
-rooms ||--o{ devices : "размещает"
+
+' rooms 1:N devices (room_id nullable)
+rooms |o--o{ devices : "размещает"
+
+' devices 1:N device_states
 devices ||--o{ device_states : "имеет состояние"
+
+' devices 1:N telemetry_readings
 devices ||--o{ telemetry_readings : "публикует"
+
+' devices 1:N command_log
 devices ||--o{ command_log : "исполняет"
+
+' homes 1:N pairing_sessions
 homes ||--o{ pairing_sessions : "проводит"
+
+' homes 1:N automation_rules
 homes ||--o{ automation_rules : "имеет правила"
+
+' automation_rules 1:N rule_actions
 automation_rules ||--o{ rule_actions : "содержит действия"
+
+' devices 1:N rule_actions (цель действия)
 devices ||--o{ rule_actions : "цель действия"
+
+' ============================================================
+' Примечания
+' ============================================================
+note right of users
+  role:
+  • resident — житель
+  • operator — оператор
+  • admin — администратор
+end note
+
+note bottom of device_states
+  Key-value модель:
+  (device_id, property) — UNIQUE
+  property: temperature | motion |
+            power | lock | ...
+  Новый тип датчика = новая строка,
+  а не миграция схемы
+end note
+
+note bottom of telemetry_readings
+  Append-only, партиционирование
+  по recorded_at (месяц).
+  Индексы:
+  • (device_id, recorded_at DESC)
+  • (metric, recorded_at DESC)
+end note
+
+note right of rule_actions
+  payload: JSONB
+  Пример:
+  • turn_on: {}
+  • set_temperature: {"value": 22}
+  GIN-индекс для поиска
+end note
+
+note bottom of pairing_sessions
+  Partial index:
+  idx_pairing_expires
+  WHERE status IN ('started','found')
+end note
+
+' ============================================================
+' Группировка для читаемости
+' ============================================================
+together {
+  entity users
+  entity homes
+  entity rooms
+  entity devices
+}
+
+together {
+  entity device_states
+  entity pairing_sessions
+  entity automation_rules
+  entity rule_actions
+  entity telemetry_readings
+  entity command_log
+}
 
 @enduml
