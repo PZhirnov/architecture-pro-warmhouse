@@ -11,18 +11,43 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./smart_home/init.sql:/docker-entrypoint-initdb.d/init-01.sql   # создает схему БД из DLL
-      - ./init_db/init_ddl_new_db.sql:/docker-entrypoint-initdb.d/init-ddl_01.sql # добавляем в схему БД таблицы для новых сервисов
-      - ./init_db/init_dml_new_db.sql:/docker-entrypoint-initdb.d/init-dml_01.sql # добавляем в схему БД таблицы для новых сервисов
+      - ./smart_home/init.sql:/docker-entrypoint-initdb.d/01-base.sql:ro
+      - ./init_db/init_ddl_new_db.sql:/docker-entrypoint-initdb.d/02-ddl.sql:ro
+      - ./init_db/init_dml_new_db.sql:/docker-entrypoint-initdb.d/03-dml.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d smarthome"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smarthome"]
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
     networks:
       - smarthome-network
 
-# Сервис сенсора, отдающий случайную температуру для комнаты.
+  nats:
+    image: nats:2.10-alpine
+    container_name: smarthome-nats
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    restart: unless-stopped
+    networks:
+      - smarthome-network          # ← ИСПРАВЛЕНО
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: smarthome-mqtt
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+    restart: unless-stopped
+    networks:
+      - smarthome-network          # ← ИСПРАВЛЕНО
+
   temperature-api:
     build:
       context: ./temperature_api
@@ -32,15 +57,14 @@ services:
       postgres:
         condition: service_healthy
     ports:
-    - "8081:8081"
+      - "8081:8081"
     restart: unless-stopped
     networks:
-    - smarthome-network
+      - smarthome-network
 
-# Монолит на Go (текущий рабочий сервис), отдающий случайную температуру для комнаты.
   app:
     build:
-      context: ./smart_home
+      context: ./go_mono_smart_home
       dockerfile: Dockerfile
     container_name: smarthome-app
     depends_on:
@@ -48,36 +72,22 @@ services:
         condition: service_healthy
       temperature-api:
         condition: service_started
+      nats:
+        condition: service_started        # ← добавлено, если app использует NATS
     environment:
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/smarthome
       - TEMPERATURE_API_URL=http://temperature-api:8081
+      - NATS_URL=nats://nats:4222         # ← добавлено, если app использует NATS
     ports:
       - "8080:8080"
-    restart: unless-stopped
-    networks:
-      - smarthome-network
-# Новые сервисы:
-# Управление устройствами - sh-device-management-service
-  sh-device-management-service:
-    build:
-      context: ./sh_device-management-service
-      dockerfile: Dockerfile
-    container_name: device-management-service
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/smarthome
-      - APP_NAME=Smart Home API
-      - DEBUG=false
-    ports:
-      - "8082:8000"
     restart: unless-stopped
     networks:
       - smarthome-network
 
 volumes:
   postgres_data:
+  nats_data:          # ← добавлено
+  mosquitto_data:     # ← добавлено
 
 networks:
   smarthome-network:
