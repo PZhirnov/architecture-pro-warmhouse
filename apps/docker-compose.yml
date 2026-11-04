@@ -1,36 +1,213 @@
-version: '3.8'
+name: smarthome
 
 services:
-  postgres:
+  # ================== Инфраструктура ==================
+  db:
     image: postgres:16-alpine
-    container_name: smarthome-postgres
-  ## тут нужно добавить настройки
+    container_name: smarthome-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: smarthome
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smarthome"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      - smarthome-net
 
+  nats:
+    image: nats:2.10-alpine
+    container_name: smarthome-nats
+    command: ["-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    networks:
+      - smarthome-net
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: smarthome-mqtt
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - smarthome-net
+
+  # Решение задачи №5
   temperature-api:
-  ## тут нужно добавить приложение
-
-  app:
     build:
-      context: ./smart_home
+      context: ./temperature_api
       dockerfile: Dockerfile
-    container_name: smarthome-app
+    container_name: temperature-api
     depends_on:
-      postgres:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    networks:
+      - smarthome-net
+  # ================== Старый монолит на Go ======
+  old-app-go:
+    build:
+      context: ./go_mono_smart_home
+      dockerfile: Dockerfile
+    container_name: old-smarthome-go-app
+    depends_on:
+      db:
         condition: service_healthy
       temperature-api:
         condition: service_started
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/smarthome
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/smarthome
       - TEMPERATURE_API_URL=http://temperature-api:8081
     ports:
       - "8080:8080"
     restart: unless-stopped
     networks:
-      - smarthome-network
+      - smarthome-net
 
+  # Новые сервисы с BFF
+  # ================== Новые сервисы ==================
+  bff:
+    build: { context: ., dockerfile: Dockerfile.python }
+    container_name: smarthome-bff
+    command: uvicorn services.bff.main:app --host 0.0.0.0 --port 8089
+    ports:
+      - "8089:8089"
+    environment:
+      DEVICE_URL: http://device:8087
+      TELEMETRY_URL: http://telemetry:8082
+      AUTOMATION_URL: http://automation:8083
+      LOCATION_URL: http://location:8085
+      USER_URL: http://user:8086
+    depends_on:
+      - device
+      - telemetry
+      - automation
+      - location
+      - user
+    networks:
+      - smarthome-net
+  user:
+    build: { context: ., dockerfile: Dockerfile.python }
+    container_name: smarthome-users
+    command: uvicorn services.user.main:app --host 0.0.0.0 --port 8086
+    ports:
+      - "8086:8086"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/smarthome
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - smarthome-net
+  location:
+    build: { context: ., dockerfile: Dockerfile.python }
+    container_name: smarthome-locations
+    command: uvicorn services.location.main:app --host 0.0.0.0 --port 8085
+    ports:
+      - "8085:8085"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/smarthome
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - smarthome-net
+  device:
+    build: { context: ., dockerfile: Dockerfile.python }
+    container_name: smarthome-device
+    command: uvicorn services.device.main:app --host 0.0.0.0 --port 8087
+    ports:
+      - "8087:8087"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/smarthome
+      NATS_URL: nats://nats:4222
+    depends_on:
+      db:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    networks:
+      - smarthome-net
+
+  telemetry:
+    build: { context: ., dockerfile: Dockerfile.python }
+    container_name: smarthome-telemetry
+    command: uvicorn services.telemetry.main:app --host 0.0.0.0 --port 8082
+    ports:
+      - "8082:8082"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/smarthome
+      NATS_URL: nats://nats:4222
+    depends_on:
+      db:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    networks:
+      - smarthome-net
+
+  automation:
+    build: { context: ., dockerfile: Dockerfile.python }
+    container_name: smarthome-automation
+    command: uvicorn services.automation.main:app --host 0.0.0.0 --port 8083
+    ports:
+      - "8083:8083"
+    environment:
+      NATS_URL: nats://nats:4222
+      TEMPERATURE_THRESHOLD: "25"
+    depends_on:
+      - nats
+    networks:
+      - smarthome-net
+
+  acl:
+    build: { context: ., dockerfile: Dockerfile.python }
+    container_name: smarthome-acl
+    command: uvicorn services.acl.main:app --host 0.0.0.0 --port 8084
+    ports:
+      - "8084:8084"
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: "1883"
+      NATS_URL: nats://nats:4222
+    depends_on:
+      - mqtt
+      - nats
+    networks:
+      - smarthome-net
+
+  simulator:
+    build: { context: ., dockerfile: Dockerfile.python }
+    container_name: smarthome-simulator
+    command: python -m simulator.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/smarthome
+      MQTT_URL: mqtt
+      MQTT_PORT: "1883"
+      INTERVAL_SEC: "5"
+      RELOAD_SEC: "60"
+    depends_on:
+      db:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
+    networks:
+      - smarthome-net
 volumes:
-  postgres_data:
+  pgdata:
 
 networks:
-  smarthome-network:
+  smarthome-net:
     driver: bridge

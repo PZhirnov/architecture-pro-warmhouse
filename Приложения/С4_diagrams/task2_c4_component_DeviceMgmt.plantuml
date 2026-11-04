@@ -1,0 +1,46 @@
+@startuml Component_DeviceMgmt
+!include <C4/C4_Component>
+
+title Компоненты: Управление устройствами
+
+Container_Boundary(device, "Сервис «Управление устройствами»") {
+  Component(api, "API устройств", "Python / HTTP", "CRUD устройств, запуск сопряжения, ручные команды")
+  Component(repo, "Репозиторий устройств", "Python", "Хранение устройств и состояний")
+  Component(pairing, "Менеджер сопряжения", "Python", "Оркестрация подключения устройства (PairingSession)")
+  Component(stateMgr, "Менеджер состояния", "Python", "Обновление DeviceState по событиям от ACL")
+  Component(cmdExec, "Исполнитель команд", "Python", "Приём «Запрошено действие», отправка в ACL, обработка результата")
+  Component(publisher, "Публикатор событий", "Python / NATS", "Публикует «Устройство зарегистрировано», «Состояние изменено», «Команда выполнена/не выполнена»")
+  Component(onlineTracker, "Трекер online/offline", "Python", "Отслеживание доступности по heartbeat")
+}
+
+ContainerDb(db, "PostgreSQL", "SQL", "Устройства, состояния, сессии сопряжения")
+ContainerQueue(broker, "Шина событий", "NATS", "Доменные события")
+Container(acl, "Интеграция устройств (ACL)", "Python", "Протоколы и нормализация")
+Container(telemetry, "Телеметрия", "Python", "Потребитель «Показание получено»")
+
+Rel(api, repo, "Чтение/запись")
+Rel(api, pairing, "Запуск сопряжения")
+Rel(repo, db, "SQL")
+Rel(pairing, acl, "Открыть сессию, зарегистрировать устройство", "gRPC")
+Rel(pairing, repo, "Создать устройство")
+Rel(stateMgr, acl, "Слушает «Показание нормализовано»", "NATS")
+Rel(stateMgr, repo, "Обновить состояние")
+Rel(stateMgr, publisher, "«Состояние изменено»")
+Rel(cmdExec, broker, "Подписка на «Запрошено действие»", "NATS")
+Rel(cmdExec, acl, "Отправить команду", "gRPC")
+Rel(cmdExec, publisher, "«Команда выполнена» / «Команда не выполнена»")
+Rel(onlineTracker, acl, "Heartbeat / offline-события", "NATS")
+Rel(onlineTracker, publisher, "«Устройство ушло в офлайн»")
+Rel(publisher, broker, "Публикация событий", "NATS")
+Rel(publisher, telemetry, "«Показание получено»", "NATS")
+
+@enduml
+
+```
+Ключевые решения:
+Менеджер сопряжения и исполнитель команд — разные компоненты: pairing — редкая операция, команды — частая.
+Менеджер состояния слушает события от ACL и обновляет DeviceState — единственный писатель состояния.
+Трекер online/offline — отдельный компонент, чтобы heartbeat-логика не смешивалась с командами.
+Публикатор изолирует сервис от NATS: домен не знает про брокер.
+```
+

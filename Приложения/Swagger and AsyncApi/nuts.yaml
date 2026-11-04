@@ -1,0 +1,503 @@
+asyncapi: '2.6.0'
+
+info:
+  title: Smart Home Platform — Event Bus
+  version: '1.0.0'
+  description: |
+    Доменные события и команды платформы умного дома.
+    Транспорт: NATS (JetStream для гарантий at-least-once).
+    Крайний слой: MQTT — сырые сообщения от IoT-устройств через шлюз.
+  contact:
+    name: Smart Home Team
+  license:
+    name: MIT
+
+defaultContentType: application/json
+
+servers:
+  nats-production:
+    url: nats://nats:4222
+    protocol: nats
+    description: Production NATS JetStream (at-least-once, durable consumers)
+  nats-local:
+    url: nats://localhost:4222
+    protocol: nats
+    description: Local development NATS
+  mqtt-devices:
+    url: mqtt://mqtt:1883
+    protocol: mqtt
+    description: MQTT-брокер для IoT-устройств (вход в ACL — Device Integration)
+
+# ============================================================
+# Каналы (channels) — subjects в NATS и топики в MQTT
+# ============================================================
+channels:
+
+  # --- MQTT: сырые сообщения от физических устройств ---
+  'devices/{gatewayId}/{deviceId}/reading':
+    description: |
+      Сырые MQTT-сообщения от датчиков через шлюз.
+      Публикуют: физические устройства. Слушает: Device Integration (ACL).
+    servers:
+      - mqtt-devices
+    parameters:
+      gatewayId:
+        description: Идентификатор шлюза
+        schema: { type: string }
+      deviceId:
+        description: Протокольный адрес устройства (не доменный DeviceId)
+        schema: { type: string }
+    subscribe:
+      operationId: onRawDeviceReading
+      summary: Device Integration слушает сырые MQTT-сообщения
+      message:
+        $ref: '#/components/messages/RawDeviceMessage'
+
+  # --- NATS: нормализованное показание от ACL ---
+  'telemetry.reading':
+    description: |
+      Нормализованные показания от Device Integration (ACL).
+      Публикует: Device Integration. Слушает: Telemetry.
+    publish:
+      operationId: publishReadingNormalized
+      summary: Device Integration публикует нормализованное показание
+      message:
+        $ref: '#/components/messages/ReadingNormalized'
+    subscribe:
+      operationId: subscribeReadingNormalized
+      summary: Telemetry подписывается на нормализованные показания
+      message:
+        $ref: '#/components/messages/ReadingNormalized'
+
+  # --- NATS: показание записано в хранилище ---
+  'telemetry.received':
+    description: |
+      Показание успешно записано в Time-Series DB.
+      Публикует: Telemetry. Слушает: Automation, WebSocket-хаб BFF.
+    publish:
+      operationId: publishReadingReceived
+      summary: Telemetry публикует событие после записи показания
+      message:
+        $ref: '#/components/messages/ReadingReceived'
+    subscribe:
+      operationId: subscribeReadingReceived
+      summary: Automation подписывается на показания для движка правил
+      message:
+        $ref: '#/components/messages/ReadingReceived'
+
+  # --- NATS: изменение состояния устройства ---
+  'device.state_changed':
+    description: |
+      Состояние устройства изменилось.
+      Публикует: Device Management. Слушает: Automation, Notifications.
+    publish:
+      operationId: publishDeviceStateChanged
+      summary: Device Management публикует изменение состояния
+      message:
+        $ref: '#/components/messages/DeviceStateChanged'
+    subscribe:
+      operationId: subscribeDeviceStateChanged
+      summary: Automation слушает изменения состояния устройств
+      message:
+        $ref: '#/components/messages/DeviceStateChanged'
+
+  # --- NATS: устройство зарегистрировано ---
+  'device.registered':
+    description: |
+      Новое устройство зарегистрировано в доме.
+      Публикует: Device Management. Слушает: Telemetry (кэш метаданных), Notifications.
+    publish:
+      operationId: publishDeviceRegistered
+      summary: Device Management публикует регистрацию устройства
+      message:
+        $ref: '#/components/messages/DeviceRegistered'
+    subscribe:
+      operationId: subscribeDeviceRegistered
+      summary: Telemetry обновляет кэш метаданных устройств
+      message:
+        $ref: '#/components/messages/DeviceRegistered'
+
+  # --- NATS: устройство ушло в офлайн ---
+  'device.went_offline':
+    description: |
+      Устройство перестало отвечать (heartbeat timeout).
+      Публикует: Device Management. Слушает: Notifications, Automation.
+    publish:
+      operationId: publishDeviceWentOffline
+      summary: Device Management публикует offline-событие
+      message:
+        $ref: '#/components/messages/DeviceWentOffline'
+    subscribe:
+      operationId: subscribeDeviceWentOffline
+      summary: Notifications уведомляет жителя
+      message:
+        $ref: '#/components/messages/DeviceWentOffline'
+
+  # --- NATS: команда устройству от Automation ---
+  'command.device':
+    description: |
+      Доменная команда устройству от Automation.
+      Публикует: Automation. Слушает: Device Management (Customer/Supplier).
+    publish:
+      operationId: publishActionRequested
+      summary: Automation запрашивает действие на устройстве
+      message:
+        $ref: '#/components/messages/ActionRequested'
+    subscribe:
+      operationId: subscribeActionRequested
+      summary: Device Management исполняет команду
+      message:
+        $ref: '#/components/messages/ActionRequested'
+
+  # --- NATS: команда выполнена ---
+  'command.executed':
+    description: |
+      Команда успешно выполнена устройством.
+      Публикует: Device Management. Слушает: Automation, Notifications.
+    publish:
+      operationId: publishCommandExecuted
+      summary: Device Management публикует результат
+      message:
+        $ref: '#/components/messages/CommandExecuted'
+    subscribe:
+      operationId: subscribeCommandExecuted
+      summary: Automation фиксирует результат выполнения
+      message:
+        $ref: '#/components/messages/CommandExecuted'
+
+  # --- NATS: команда не выполнена ---
+  'command.failed':
+    description: |
+      Команда не выполнена (offline, timeout, unsupported).
+      Публикует: Device Management. Слушает: Automation, Notifications.
+    publish:
+      operationId: publishCommandFailed
+      summary: Device Management публикует ошибку
+      message:
+        $ref: '#/components/messages/CommandFailed'
+    subscribe:
+      operationId: subscribeCommandFailed
+      summary: Notifications уведомляет жителя о сбое
+      message:
+        $ref: '#/components/messages/CommandFailed'
+
+  # --- NATS: правило сработало ---
+  'automation.rule_triggered':
+    description: |
+      Условия правила выполнились, Automation начал действия.
+      Публикует: Automation. Слушает: Notifications, аудит.
+    publish:
+      operationId: publishRuleTriggered
+      summary: Automation публикует срабатывание правила
+      message:
+        $ref: '#/components/messages/RuleTriggered'
+    subscribe:
+      operationId: subscribeRuleTriggered
+      summary: Notifications уведомляет (опционально)
+      message:
+        $ref: '#/components/messages/RuleTriggered'
+
+  # --- NATS: правило не выполнено ---
+  'automation.rule_failed':
+    description: |
+      Внутренняя ошибка Automation при вычислении правила.
+      Публикует: Automation. Слушает: Notifications, аудит.
+    publish:
+      operationId: publishRuleFailed
+      summary: Automation публикует сбой правила
+      message:
+        $ref: '#/components/messages/RuleFailed'
+    subscribe:
+      operationId: subscribeRuleFailed
+      summary: Notifications уведомляет о сбое
+      message:
+        $ref: '#/components/messages/RuleFailed'
+
+  # --- NATS: порог превышен ---
+  'telemetry.threshold_exceeded':
+    description: |
+      Показание вышло за настроенный порог.
+      Публикует: Telemetry. Слушает: Automation, Notifications.
+    publish:
+      operationId: publishThresholdExceeded
+      summary: Telemetry публикует превышение порога
+      message:
+        $ref: '#/components/messages/ThresholdExceeded'
+    subscribe:
+      operationId: subscribeThresholdExceeded
+      summary: Automation реагирует на порог
+      message:
+        $ref: '#/components/messages/ThresholdExceeded'
+
+  # --- NATS: аномалия ---
+  'telemetry.anomaly_detected':
+    description: |
+      Обнаружена статистическая аномалия в показаниях.
+      Публикует: Telemetry. Слушает: Automation, Notifications.
+    publish:
+      operationId: publishAnomalyDetected
+      summary: Telemetry публикует аномалию
+      message:
+        $ref: '#/components/messages/AnomalyDetected'
+    subscribe:
+      operationId: subscribeAnomalyDetected
+      summary: Notifications уведомляет жителя
+      message:
+        $ref: '#/components/messages/AnomalyDetected'
+
+# ============================================================
+# Сообщения и схемы
+# ============================================================
+components:
+
+  messages:
+
+    RawDeviceMessage:
+      name: RawDeviceMessage
+      title: Сырое MQTT-сообщение от устройства
+      summary: Протокол-специфичный payload (нормализуется в ACL)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RawDeviceMessagePayload'
+
+    ReadingNormalized:
+      name: ReadingNormalized
+      title: Нормализованное показание
+      summary: Показание после ACL, готовое к записи
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ReadingNormalizedPayload'
+      examples:
+        - name: temperature
+          payload:
+            deviceId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+            homeId:   "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+            metric:   "temperature"
+            value:    22.5
+            unit:     "C"
+            timestamp: "2026-11-01T10:15:00Z"
+            dedupKey: "abc123"
+
+    ReadingReceived:
+      name: ReadingReceived
+      title: Показание получено
+      summary: Событие после успешной записи в Time-Series DB
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ReadingReceivedPayload'
+
+    DeviceStateChanged:
+      name: DeviceStateChanged
+      title: Состояние устройства изменилось
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeviceStateChangedPayload'
+
+    DeviceRegistered:
+      name: DeviceRegistered
+      title: Устройство зарегистрировано
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeviceRegisteredPayload'
+
+    DeviceWentOffline:
+      name: DeviceWentOffline
+      title: Устройство ушло в офлайн
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeviceWentOfflinePayload'
+
+    ActionRequested:
+      name: ActionRequested
+      title: Запрошено действие
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ActionRequestedPayload'
+
+    CommandExecuted:
+      name: CommandExecuted
+      title: Команда выполнена
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommandExecutedPayload'
+
+    CommandFailed:
+      name: CommandFailed
+      title: Команда не выполнена
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommandFailedPayload'
+
+    RuleTriggered:
+      name: RuleTriggered
+      title: Правило сработало
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RuleTriggeredPayload'
+
+    RuleFailed:
+      name: RuleFailed
+      title: Правило не выполнено
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RuleFailedPayload'
+
+    ThresholdExceeded:
+      name: ThresholdExceeded
+      title: Порог превышен
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ThresholdExceededPayload'
+
+    AnomalyDetected:
+      name: AnomalyDetected
+      title: Аномалия обнаружена
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AnomalyDetectedPayload'
+
+  schemas:
+
+    RawDeviceMessagePayload:
+      type: object
+      required: [gatewayId, protocolAddress, payload, receivedAt]
+      properties:
+        gatewayId:       { type: string }
+        protocolAddress: { type: string }
+        payload:         { type: object, additionalProperties: true }
+        receivedAt:      { type: string, format: date-time }
+
+    ReadingNormalizedPayload:
+      type: object
+      required: [deviceId, homeId, metric, value, timestamp]
+      properties:
+        deviceId:  { type: string, format: uuid }
+        homeId:    { type: string, format: uuid }
+        metric:
+          type: string
+          enum: [temperature, humidity, motion, power, lock, illuminance]
+        value:
+          oneOf:
+            - { type: number }
+            - { type: boolean }
+            - { type: string }
+        unit:      { type: string, nullable: true }
+        timestamp: { type: string, format: date-time }
+        dedupKey:  { type: string }
+
+    ReadingReceivedPayload:
+      allOf:
+        - $ref: '#/components/schemas/ReadingNormalizedPayload'
+        - type: object
+          required: [recordedAt]
+          properties:
+            recordedAt: { type: string, format: date-time }
+
+    DeviceStateChangedPayload:
+      type: object
+      required: [deviceId, homeId, newState, changedAt]
+      properties:
+        deviceId:  { type: string, format: uuid }
+        homeId:    { type: string, format: uuid }
+        oldState:  { type: object, additionalProperties: true, nullable: true }
+        newState:  { type: object, additionalProperties: true }
+        changedAt: { type: string, format: date-time }
+
+    DeviceRegisteredPayload:
+      type: object
+      required: [deviceId, homeId, type, registeredAt]
+      properties:
+        deviceId:     { type: string, format: uuid }
+        homeId:       { type: string, format: uuid }
+        type:         { type: string, enum: [sensor, actuator, camera, gateway] }
+        vendor:       { type: string, nullable: true }
+        model:        { type: string, nullable: true }
+        capabilities: { type: array, items: { type: string } }
+        registeredAt: { type: string, format: date-time }
+
+    DeviceWentOfflinePayload:
+      type: object
+      required: [deviceId, homeId, lastSeenAt]
+      properties:
+        deviceId:   { type: string, format: uuid }
+        homeId:     { type: string, format: uuid }
+        lastSeenAt: { type: string, format: date-time }
+
+    ActionRequestedPayload:
+      type: object
+      required: [commandId, deviceId, type, requestedAt]
+      properties:
+        commandId:   { type: string, format: uuid }
+        ruleId:      { type: string, format: uuid, nullable: true }
+        deviceId:    { type: string, format: uuid }
+        type:
+          type: string
+          enum: [turn_on, turn_off, set_temperature, set_level, lock, unlock]
+        payload:     { type: object, additionalProperties: true, default: {} }
+        requestedAt: { type: string, format: date-time }
+
+    CommandExecutedPayload:
+      type: object
+      required: [commandId, deviceId, executedAt]
+      properties:
+        commandId:  { type: string, format: uuid }
+        deviceId:   { type: string, format: uuid }
+        result:     { type: object, additionalProperties: true }
+        executedAt: { type: string, format: date-time }
+
+    CommandFailedPayload:
+      type: object
+      required: [commandId, deviceId, reason, failedAt]
+      properties:
+        commandId: { type: string, format: uuid }
+        deviceId:  { type: string, format: uuid }
+        reason:
+          type: string
+          enum: [offline, timeout, unsupported, internal_error]
+        message:   { type: string, nullable: true }
+        failedAt:  { type: string, format: date-time }
+
+    RuleTriggeredPayload:
+      type: object
+      required: [ruleId, homeId, triggeredAt]
+      properties:
+        ruleId:      { type: string, format: uuid }
+        homeId:      { type: string, format: uuid }
+        trigger:     { type: object, additionalProperties: true }
+        triggeredAt: { type: string, format: date-time }
+
+    RuleFailedPayload:
+      type: object
+      required: [ruleId, homeId, reason, failedAt]
+      properties:
+        ruleId:   { type: string, format: uuid }
+        homeId:   { type: string, format: uuid }
+        reason:
+          type: string
+          enum: [condition_evaluation_error, missing_device_data, internal_error]
+        message:  { type: string, nullable: true }
+        failedAt: { type: string, format: date-time }
+
+    ThresholdExceededPayload:
+      type: object
+      required: [deviceId, homeId, metric, value, threshold, direction, detectedAt]
+      properties:
+        deviceId:   { type: string, format: uuid }
+        homeId:     { type: string, format: uuid }
+        metric:     { type: string }
+        value:      { type: number }
+        threshold:  { type: number }
+        direction:  { type: string, enum: [above, below] }
+        detectedAt: { type: string, format: date-time }
+
+    AnomalyDetectedPayload:
+      type: object
+      required: [deviceId, homeId, metric, value, detectedAt]
+      properties:
+        deviceId:   { type: string, format: uuid }
+        homeId:     { type: string, format: uuid }
+        metric:     { type: string }
+        value:      { type: number }
+        expected:   { type: number, nullable: true }
+        method:     { type: string, enum: [zscore, moving_average, ml] }
+        detectedAt: { type: string, format: date-time }
