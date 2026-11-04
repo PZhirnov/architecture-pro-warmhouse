@@ -36,7 +36,6 @@ entity "users" as users {
 entity "homes" as homes {
   * id         : UUID           <<PK>>
   --
-  * owner_id   : UUID           <<FK users.id>>
   * name       : VARCHAR(255)
     address    : VARCHAR(500)
   * created_at : TIMESTAMP
@@ -50,6 +49,20 @@ entity "rooms" as rooms {
   --
   * home_id : UUID           <<FK homes.id>>
   * name    : VARCHAR(255)
+}
+
+' ============================================================
+' 3. user_locations — привязка пользователей к локациям (many to many)
+' ============================================================
+entity "user_locations" as user_locations {
+  * id         : UUID           <<PK>>
+  --
+  * owner_id   : UUID          <<FK users.id>>
+  * home_id   : UUID           <<FK homes.id>>
+  * room_id   : UUID           <<FK rooms.id>>
+  * name       : VARCHAR(255)
+    address    : VARCHAR(500)
+  * created_at : TIMESTAMP
 }
 
 ' ============================================================
@@ -149,8 +162,10 @@ entity "command_log" as command_log {
 ' Связи (relationships)
 ' ============================================================
 
-' users 1:N homes
-users ||--o{ homes : "владеет"
+' users M:N home-room (локация может быть связана с несколькими пользователями)
+users ||--o{ user_locations : "владеет"
+homes ||--o{ user_locations : "принадлежит пользователю"
+rooms ||--o{ user_locations : "принадлежит пользователю"
 
 ' homes 1:N rooms
 homes ||--o{ rooms : "содержит"
